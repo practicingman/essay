@@ -1,63 +1,30 @@
-% !TEX root = ../main.tex
+% !TeX root = ../main.tex
 
-\chapter{引用文献的标注}
+\chapter{总结与展望}
+\label{cha:conclusion}
 
-模板使用 \pkg{natbib} 宏包来设置参考文献引用的格式，
-更多引用方法可以参考该宏包的使用说明。
+\section{全文总结}
+\label{sec:conclusion-summary}
 
+本文围绕“外部知识如何有效进入推荐模型”这一核心问题，从向量级与图结构级两个互补的视角展开研究，主要工作与结论如下。
 
+第一，提出了大语言模型增强的用户兴趣聚合表征推荐方法。该方法以画像向量承载开放域语义知识，以聚类兴趣原型降低兴趣建模的复杂度，以协同过滤特定注意力、物品动态注意力与用户动态注意力实现细粒度聚合，并以语义难负例对比学习对齐语义空间与协同空间。通过将大语言模型相关计算全部前移至离线阶段，该方法在取得精度提升的同时保持了与双塔模型同阶的在线推理开销。
 
-\section{顺序编码制}
+第二，提出了基于多智能体图构建与图采样的推荐方法。该方法由知识融合智能体与语义增强智能体协同构建交互、知识、语义三个视角的多视角图，并以元组形式支持增量更新；由采样优化智能体对长尾节点补全伪链路、对头部节点筛选强链路，缓解了数据稀疏与噪声问题；在多视角图卷积中引入分散正则化以抑制表征同质化；最终提供直接模式与智能体模式两种部署形态，兼顾时延与效果。
 
-\subsection{角标数字标注法}
+第三，将上述方法在媒体内容推荐场景中完成了工程实现与验证。实践表明，两类知识注入方式在真实业务约束下均具备可部署性，且二者在效果与开销上形成互补：向量级注入适合高并发、低时延的召回与粗排环节，图结构级注入适合对精度与可解释性要求更高的环节。
 
-\sysusetup{
-  cite-style = super,
-}
-\noindent
-\begin{tabular}{l@{\quad$\Rightarrow$\quad}l}
-  \verb|\cite{knuth86a}|         & \cite{knuth86a}         \\
-  \verb|\citet{knuth86a}|        & \citet{knuth86a}        \\
-  \verb|\cite[42]{knuth86a}|     & \cite[42]{knuth86a}     \\
-  \verb|\cite{knuth86a,tlc2}|    & \cite{knuth86a,tlc2}    \\
-  \verb|\cite{knuth86a,knuth84}| & \cite{knuth86a,knuth84} \\
-\end{tabular}
+\section{研究不足与未来工作}
+\label{sec:future-work}
 
+尽管取得了一定进展，本文工作仍存在以下不足，值得进一步研究。
 
-\subsection{数字标注法}
+（1）知识质量的评估与筛选仍较粗略。本文在构建知识连接与语义连接时主要依赖相似度阈值与模型置信度，缺乏对知识时效性与来源可靠性的系统建模。未来可引入知识质量评估模块，对注入的知识进行动态加权与淘汰。
 
-\sysusetup{
-  cite-style = inline,
-}
-\noindent
-\begin{tabular}{l@{\quad$\Rightarrow$\quad}l}
-  \verb|\cite{knuth86a}|         & \cite{knuth86a}         \\
-  \verb|\citet{knuth86a}|        & \citet{knuth86a}        \\
-  \verb|\cite[42]{knuth86a}|     & \cite[42]{knuth86a}     \\
-  \verb|\cite{knuth86a,tlc2}|    & \cite{knuth86a,tlc2}    \\
-  \verb|\cite{knuth86a,knuth84}| & \cite{knuth86a,knuth84} \\
-\end{tabular}
+（2）多智能体框架的推理成本较高。知识融合智能体与语义增强智能体的调用集中在离线阶段，但在增量更新频繁的场景下仍可能成为瓶颈。未来可探索轻量化智能体与缓存复用机制，降低单位更新的成本。
 
+（3）跨域场景下的知识迁移尚未充分研究。实际业务中，用户与物品往往分布在多个业务域中，单一域内构建的知识图难以覆盖跨域兴趣。结合联邦学习实现跨域知识的隐私保护式共享，是一个有价值的方向。
 
+（4）实验验证仍以公开数据集为主，线上 A/B 测试的周期与规模有限。未来可在更长的观测窗口内验证方法在长期收益与用户留存方面的表现。
 
-\section{著者-出版年制标注法}
-
-\sysusetup{
-  cite-style = authoryear,
-}
-\noindent
-\begin{tabular}{l@{\quad$\Rightarrow$\quad}l}
-  \verb|\cite{knuth86a}|         & \cite{knuth86a}         \\
-  \verb|\citep{knuth86a}|        & \citep{knuth86a}        \\
-  \verb|\citet[42]{knuth86a}|    & \citet[42]{knuth86a}    \\
-  \verb|\citep[42]{knuth86a}|    & \citep[42]{knuth86a}    \\
-  \verb|\cite{knuth86a,tlc2}|    & \cite{knuth86a,tlc2}    \\
-  \verb|\cite{knuth86a,knuth84}| & \cite{knuth86a,knuth84} \\
-\end{tabular}
-
-\sysusetup{
-  cite-style = super,
-}
-
-% 注意，参考文献列表中的每条文献在正文中都要被引用，下面这行代码用于测试时展示参考文献样式，写论文时请注释或删除
-\nocite{*}
+% TODO: 若学院要求，可在本节末补一句与广西重点研发计划（No. 2024AB08144）的关联，说明跨域推荐中台是后续工作的落地场景。

@@ -1,74 +1,197 @@
-\chapter{数学}
+% !TeX root = ../main.tex
 
-\label{cha:maths}
+\chapter{大语言模型增强的用户兴趣聚合表征推荐方法}
+\label{cha:llm-interest}
 
-\section{公式}
-\label{sec:formula}
+本章提出一种以大语言模型为知识源、以聚类兴趣原型为聚合中心的推荐方法。该方法将开放域语义知识以画像向量的形式注入推荐模型，通过多种注意力机制聚合用户兴趣，并借助离线预计算与在线内积在保证精度的同时显著降低推理开销。
 
-数学公式可以使用 \env{equation} 和 \env{equation*} 环境。
-注意数学公式的引用应前后带括号，建议使用 \cs{eqref} 命令，比如式~\eqref{eq:example}。
+% TODO: 本章方法基于作者已投稿至 Neural Networks 的论文与已申请发明专利“基于大模型增强的用户兴趣聚合表征的推荐方法和系统”。
+%       按学术规范，在本章首页加脚注说明："本章内容基于作者作为第一作者投稿至 Neural Networks 的论文。"
+
+\section{引言}
+\label{sec:llm-intro}
+
+如第~\ref{cha:related-work}~章所述，现有大语言模型增强推荐方法大多将模型输出作为静态特征一次性注入，既缺乏对表示空间对齐的显式约束，也难以满足工业级时延要求。与此同时，以点击率预测为目标的推荐场景要求模型在毫秒级完成打分，而细粒度兴趣建模（如 DIN 类方法）的在线开销恰恰最高。二者构成一对难以调和的矛盾。
+
+本章的核心思路是：将大语言模型的知识“离线化”，把语义知识压缩为可缓存的画像向量与兴趣原型，在线阶段仅执行轻量的注意力聚合与向量内积，从而在获得语义知识增益的同时保持双塔级推理效率。
+
+\section{问题定义与符号说明}
+\label{sec:llm-problem}
+
+给定用户集合 $\mathcal{U}$、物品集合 $\mathcal{I}$ 与用户—物品交互矩阵 $\mathbf{X}\in\{0,1\}^{|\mathcal{U}|\times|\mathcal{I}|}$，推荐任务的目标是学习打分函数 $f(u,i)$，估计用户 $u$ 对物品 $i$ 的点击概率。主要符号如表~\ref{tab:llm-notation}~所示。
+
+% 注：本节符号建议与第~\ref{cha:preliminary}~章（若设符号表章节）保持一致，此处仅列出本章新增符号。
+
+\begin{table}[htbp]
+  \centering
+  \caption{本章主要符号说明}
+  \label{tab:llm-notation}
+  \begin{tabular}{cl}
+    \toprule
+    符号 & 含义 \\
+    \midrule
+    $\mathbf{p}_i$ & 物品 $i$ 的静态语义画像向量 \\
+    $\mathbf{d}_u,\ \mathbf{d}_i$ & 用户 $u$、物品 $i$ 的动态画像向量 \\
+    $\mathbf{e}_u,\ \mathbf{e}_i$ & 用户、物品的协同过滤嵌入 \\
+    $\mathbf{c}_k$ & 第 $k$ 个兴趣原型中心 \\
+    $\mathbf{h}_u$ & 用户 $u$ 的兴趣表征 \\
+    $\tau$ & 对比学习温度系数 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{基于大语言模型的画像生成}
+\label{sec:llm-profile}
+
+\subsection{物品静态语义画像}
+\label{subsec:static-profile}
+
+物品静态语义画像从两个视角构建：显式特征提取与隐含属性推理。对于显式视角，将物品的名称、描述与类别属性组织为结构化提示模板，要求大语言模型输出属性键值对，并通过规则引擎校验完整性；对于隐含视角，采用思维链提示激发模型的世界知识，输出描述物品使用场景与潜在受众的隐含属性文本。两类属性分别编码为向量后加权求和，再经线性层与多层感知机映射到统一维度，得到物品静态语义画像向量 $\mathbf{p}_i$。
+
+% TODO: 补充提示模板的具体示例（可放附录），以及加权系数的确定方式。
+
+\subsection{用户与物品动态画像}
+\label{subsec:dynamic-profile}
+
+用户动态画像以评论文本与行为日志为输入。首先对评论文本进行标准化、分句与语义单元抽取，对行为日志按时间窗口划分为行为会话；随后构造时序关联文本模板，将行为序列与评论文本联合输入大语言模型，分析行为与文本的一致性并识别潜在偏好；最终提示模型生成兴趣标签及概率化兴趣分布，经嵌入层映射为用户动态画像向量 $\mathbf{d}_u$。物品动态画像的构建方式类似，其输入为用户对物品的全局交互数据，用于提取群体感知特征 $\mathbf{d}_i$。
+
+\section{基于聚类的兴趣原型表示}
+\label{sec:interest-prototype}
+
+物品数量庞大且长尾分布显著，逐一建模兴趣中心既昂贵又易受噪声干扰。为此，本章对全部物品的静态画像向量执行聚类，以 $K$ 个原型中心刻画兴趣空间的主要方向。
+
+聚类采用余弦相似度作为距离度量，并以 K-means++ 初始化中心；原型数量 $K$ 通过粒子群算法在验证集上寻优。迭代过程中，当中心变化幅度小于阈值或达到最大迭代次数时终止，并剔除样本数小于阈值的簇，将其成员重新分配到最近的有效簇。为提升可解释性，进一步提示大语言模型为每个原型生成语义标签。
+
+% TODO: 补充 K 的搜索范围与目标函数（如轮廓系数或验证集指标）的具体设定。
+
+\section{多路注意力兴趣聚合}
+\label{sec:multi-attention}
+
+给定目标物品 $i$，首先在其静态画像向量 $\mathbf{p}_i$ 上检索最近的原型中心 $\mathbf{c}_{k(i)}$ 作为查询向量，然后在用户历史交互集合上分别计算三类注意力。
+
+\subsection{协同过滤特定注意力}
+\label{subsec:cf-attention}
+
+以原型中心为查询、用户历史物品的协同过滤嵌入为键值，采用缩放点积注意力：
+
 \begin{equation}
-  \hat{f}(\xi) = \int_{-\infty}^\infty f(x) \eu^{-2 \uppi \iu x \xi} \dif x.
-  \label{eq:example}
+  \alpha_{j}^{cf} = \frac{\exp\left(\mathbf{c}_{k(i)}^{\top}\mathbf{W}_Q^{\top}\mathbf{W}_K\mathbf{e}_j / \sqrt{d}\right)}
+  {\sum_{t\in\mathcal{H}_u}\exp\left(\mathbf{c}_{k(i)}^{\top}\mathbf{W}_Q^{\top}\mathbf{W}_K\mathbf{e}_t / \sqrt{d}\right)},
+  \qquad
+  \mathbf{h}_u^{cf} = \sum_{j\in\mathcal{H}_u}\alpha_j^{cf}\,\mathbf{W}_V\mathbf{e}_j .
+  \label{eq:cf-attention}
 \end{equation}
 
-公式中含有中文
-\begin{align}
-    \begin{split}
-        \mbox{像素准确率} &= \sum_{i=1}^{n_{cl}}n_{ii} / \sum_{i=1}^{n_{cl}}t_i \\
-        \mbox{平均像素准确率} &= \frac{1}{n_{cl}} \sum_{i=1}^{n_{cl}}(n_{ii}/ t_i) \\
-        \mbox{Mean IU} &= \frac{1}{n_{cl}} \sum_{i=1}^{n_{cl}}\frac{n_{ii}}{t_i + \sum_j^{n_{cl}} n_{ji} - n_{ii}}
-    \end{split}
-\end{align}
-公式中含有矩阵
+\subsection{物品动态注意力}
+\label{subsec:item-dynamic-attention}
+
+物品动态注意力在相似度计算中引入时间衰减因子，使近期交互获得更高权重：
+
 \begin{equation}
-    \textbf{H} = \begin{bmatrix}
-        I*\mathbf{x}_i \\ \textbf{h}
-    \end{bmatrix}
-	\label{eq:matrix}
+  \alpha_{j}^{id} = \frac{\exp\left(\beta_j\,\mathbf{c}_{k(i)}^{\top}\mathbf{W}_K'\mathbf{d}_j / \sqrt{d}\right)}
+  {\sum_{t\in\mathcal{H}_u}\exp\left(\beta_t\,\mathbf{c}_{k(i)}^{\top}\mathbf{W}_K'\mathbf{d}_t / \sqrt{d}\right)},
+  \qquad
+  \beta_j = \exp\left(-\lambda\,\Delta t_j\right),
+  \label{eq:item-attention}
 \end{equation}
-每行后面都有编号的公式
-\begin{align}
-    \frac{\partial}{\partial W_{ij}^{(l)}} J(\mathbf{W},\mathbf{b};\mathbf{x},y) & = \frac{\partial J(\mathbf{W},\mathbf{b};\mathbf{x},y)}{\partial z_i^{(l+1)}}\cdot \frac{\partial z_i^{(l+1)}}{\partial W_{ij}^{(l)}} = \delta_i^{(l+1)}a_j^{(l)} \\
-    \frac{\partial}{\partial b_i^{(l)}} J(\mathbf{W},\mathbf{b};\mathbf{x},y)    & = \frac{\partial J(\mathbf{W},\mathbf{b};\mathbf{x},y)}{\partial z_i^{(l+1)}}\cdot \frac{\partial z_i^{(l+1)}}{\partial b_i^{(l)}} = \delta_i^{(l+1)}
-\end{align}
 
-多行公式尽可能在“=”处对齐，推荐使用 \env{align} 环境，比如式~\eqref{eq:align_2}。
-\begin{align}
-  a & = b + c + d + e \label{eq:align_1} \\
-    & = f + g. \label{eq:align_2}
-\end{align}
+其中 $\Delta t_j$ 表示交互 $j$ 距当前时刻的时间间隔，$\lambda$ 为衰减系数。
 
-\section{例子、定理与证明}
+\subsection{用户动态注意力}
+\label{subsec:user-dynamic-attention}
 
-示例文件中使用 \pkg{amsthm} 宏包配置了定理、引理和证明等环境。
-用户也可以使用 \pkg{ntheorem} 宏包。
+用户动态注意力在相似度中引入行为类型权重，区分浏览、点击、收藏、评论等不同强度行为：
 
-\begin{theorem}[定理例子]
-    \label{the:example-theorem}
-    这是一个定理。
-\end{theorem}
+\begin{equation}
+  \alpha_{j}^{ud} = \frac{\exp\left(\gamma_j\,\mathbf{c}_{k(i)}^{\top}\mathbf{W}_K''\mathbf{d}_u / \sqrt{d}\right)}
+  {\sum_{t\in\mathcal{H}_u}\exp\left(\gamma_t\,\mathbf{c}_{k(i)}^{\top}\mathbf{W}_K''\mathbf{d}_u / \sqrt{d}\right)},
+  \label{eq:user-attention}
+\end{equation}
 
-\begin{corollary}[推论例子]
-    \label{the:example-corollary}
-    这是一个推论。
-\end{corollary}
+其中 $\gamma_j$ 为行为类型 $j$ 的可学习权重。
 
-\begin{lemma}[引理例子]
-    \label{the:example-lemma}
-    这是一个引理。
-\end{lemma}
+\subsection{多路表征融合}
+\label{subsec:fusion}
 
-这里我们先给出\autoref{the:example-theorem-sysu-thesis}
+三路兴趣表征经拼接后由多层感知机融合为用户兴趣表征：
 
-\begin{theorem}[中山大学毕业论文模板定理]
-    \label{the:example-theorem-sysu-thesis}
-    中山大学 \LaTeX 毕业论文模板可以用于写各种证明。
-\end{theorem}
+\begin{equation}
+  \mathbf{h}_u = \mathrm{MLP}\left(\left[\mathbf{h}_u^{cf};\ \mathbf{h}_u^{id};\ \mathbf{h}_u^{ud}\right]\right),
+  \qquad
+  \hat{y}_{ui} = \sigma\left(\mathbf{h}_u^{\top}\mathbf{p}_i\right).
+  \label{eq:fusion}
+\end{equation}
 
-下面我们对\autoref{the:example-theorem-sysu-thesis}进行证明：
+\section{语义难负例对比学习}
+\label{sec:hard-negative}
 
+仅依靠点击标签训练时，语义空间与协同空间容易发生漂移。为此，本章引入语义难负例对比学习，显式对齐两个表示空间。难负例的筛选原则是：与正样本语义相似但协同信号不支持的物品——这类样本最能提供判别信息。
 
-\begin{proof}
-  Trivial.
-\end{proof}
+采用 InfoNCE 损失：
+
+\begin{equation}
+  \mathcal{L}_{\mathrm{contra}} = -\log
+  \frac{\exp\left(s(\mathbf{v},\mathbf{v}^{+})/\tau\right)}
+  {\exp\left(s(\mathbf{v},\mathbf{v}^{+})/\tau\right) + \sum_{\mathbf{v}^{-}\in\mathcal{N}_{v}}\exp\left(s(\mathbf{v},\mathbf{v}^{-})/\tau\right)},
+  \label{eq:infonce}
+\end{equation}
+
+其中 $s(\cdot,\cdot)$ 为余弦相似度，$\mathbf{v}$ 与 $\mathbf{v}^{+}$ 分别为协同嵌入与对应的语义画像向量，$\mathcal{N}_v$ 为难负例集合，$\tau$ 为温度系数。总损失为点击预测损失与对比损失的加权和。
+
+% TODO: 补充难负例的筛选阈值与采样比例、总损失权重，以及避免假负例的处理。
+
+\section{离线预计算与在线推理}
+\label{sec:serving}
+
+为满足在线时延要求，本章将全部大语言模型相关的计算前移至离线阶段：物品静态画像向量、兴趣原型中心与用户兴趣表征均在离线训练完成后写入向量缓存；在线阶段仅需读取用户兴趣表征与候选物品画像向量，通过内积完成打分与排序。由于在线路径不含任何大语言模型调用，推理复杂度与双塔模型同阶。
+
+\section{实验}
+\label{sec:llm-experiments}
+
+\subsection{数据集与预处理}
+\label{subsec:llm-datasets}
+
+% TODO: 按论文 Table 1 填写数据集统计信息（用户数、物品数、交互数、稀疏度）。
+
+\subsection{对比方法}
+\label{subsec:llm-baselines}
+
+选取以下三类方法作为对比：传统点击率模型（LR、FM、DeepFM、DCN）、兴趣建模模型（DIN、DIEN）以及大语言模型增强模型（LLM2DIN、KAR）。
+
+\subsection{评价指标与实现细节}
+\label{subsec:llm-metrics}
+
+采用 AUC 与 LogLoss 作为评价指标；效率方面对比单次推理时延与吞吐。所有实验在相同的数据划分与早停策略下进行，重复三次取均值。
+
+% TODO: 补充硬件环境、batch size、学习率、嵌入维度等实现细节。
+
+\subsection{整体性能对比}
+\label{subsec:llm-overall}
+
+% TODO: 插入主结果表（三个数据集 × AUC/LogLoss），并给出相对最强基线的提升幅度：
+%       论文报告为 AUC 提升 0.46%–2.75%，LogLoss 降低 7.52%–15.18%。
+
+\subsection{消融实验}
+\label{subsec:llm-ablation}
+
+% TODO: 插入消融表，依次移除：聚类兴趣原型、物品动态注意力、用户动态注意力、语义难负例对比学习，
+%       验证各模块的贡献，并与专利权利要求逐条对应。
+
+\subsection{效率分析}
+\label{subsec:llm-efficiency}
+
+% TODO: 插入效率对比表（本方法 vs DIN/DIEN），论文报告推理速度为兴趣建模方法的 36–244 倍。
+
+\section{工程实现与线上部署}
+\label{sec:llm-deployment}
+
+% TODO: 本节对应横向项目的工程落地内容，注意脱敏，不出现企业名称、合同金额与真实业务数据。
+% 建议结构：
+%   (1) 系统架构：离线画像生产、向量缓存、在线打分服务三层；
+%   (2) 工程约束：画像更新的时效性、缓存一致性、冷启动处理；
+%   (3) 运行效果：以相对提升幅度表述（如"线上点击率相对提升 x%"），并说明统计口径。
+
+\section{本章小结}
+\label{sec:llm-summary}
+
+本章提出了一种大语言模型增强的用户兴趣聚合表征推荐方法。该方法以画像向量承载开放域语义知识，以聚类兴趣原型降低兴趣建模复杂度，以多路注意力实现细粒度聚合，以语义难负例对比学习对齐表示空间，并通过离线预计算保证在线推理效率。实验结果表明，该方法在多个公开数据集上优于现有基线，并在推理速度上具有显著优势。

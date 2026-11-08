@@ -3,25 +3,23 @@
 \begin{notation}
 
   \begin{notationlist}{2em}
-    \item[$\displaystyle a$] The number of angels per unit area
-    \item[$\displaystyle N$] The number of angels per needle point
-    \item[$\displaystyle A$] The area of the needle point
-    \item[$\displaystyle \sigma$] The total mass of angels per unit area
-    \item[$\displaystyle m$] The mass of one angel
-    \item[$\displaystyle \sum_{i=1}^n a_i$] The sum of $a_i$
+    \item[$\displaystyle \mathcal{U}, \mathcal{I}$] 用户集合、物品集合
+    \item[$\displaystyle \mathcal{O}$] 用户—物品交互集合
+    \item[$\displaystyle \mathcal{H}_u$] 用户 $u$ 的历史交互集合
+    \item[$\displaystyle \mathbf{X}$] 用户—物品交互矩阵
+    \item[$\displaystyle \mathbf{e}_u, \mathbf{e}_i$] 用户、物品的协同过滤嵌入
+    \item[$\displaystyle \mathbf{p}_i$] 物品 $i$ 的静态语义画像向量
+    \item[$\displaystyle \mathbf{d}_u, \mathbf{d}_i$] 用户、物品的动态画像向量
+    \item[$\displaystyle \mathbf{c}_k$] 第 $k$ 个兴趣原型中心
+    \item[$\displaystyle \mathbf{h}_u$] 用户 $u$ 的兴趣表征
+    \item[$\displaystyle \alpha_{j}$] 注意力权重
+    \item[$\displaystyle \tau$] 对比学习温度系数
+    \item[$\displaystyle \mathcal{L}_{\mathrm{contra}}$] 语义难负例对比损失
+    \item[$\displaystyle \mathcal{N}_u^{\ast}$] 用户 $u$ 在某个视角下的邻域集合
+    \item[$\displaystyle w_m$] 第 $m$ 个视角的表征融合权重
+    \item[$\displaystyle \hat{y}_{ui}$] 用户 $u$ 对物品 $i$ 的点击概率预测值
   \end{notationlist}
 
 \end{notation}
 
-
-
-% 也可以使用 nomencl 宏包
-
-% \printnomenclature
-
-% \nomenclature{$\displaystyle a$}{The number of angels per unit are}
-% \nomenclature{$\displaystyle N$}{The number of angels per needle point}
-% \nomenclature{$\displaystyle A$}{The area of the needle point}
-% \nomenclature{$\displaystyle \sigma$}{The total mass of angels per unit area}
-% \nomenclature{$\displaystyle m$}{The mass of one angel}
-% \nomenclature{$\displaystyle \sum_{i=1}^n a_i$}{The sum of $a_i$}
+% 说明：符号表按章节首次出现顺序排列；若后续新增符号，请同步维护本表。

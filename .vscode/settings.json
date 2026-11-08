@@ -1,6 +1,11 @@
 {
     "latex-workshop.intellisense.unimathsymbols.enabled": true,
     "latex-workshop.latex.build.enableMagicComments": false,
+    "latex-workshop.latex.recipe.default": "first",
+    "latex-workshop.latex.autoBuild.run": "onSave",
+    "latex-workshop.latex.autoClean.run": "onFailed",
+    "latex-workshop.view.pdf.viewer": "tab",
+    "latex-workshop.synctex.afterBuild.enabled": true,
     "latex-workshop.latex.recipes": [
         {
             "name": "latexmk (xelatex)",

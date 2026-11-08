@@ -1,23 +1,19 @@
 % !TeX root = ../main.tex
 
 \chapter{补充材料}
+\label{cha:appendix}
 
+本附录收录正文中未展开的补充材料，包括核心算法的伪代码与超参数设置。
 
-\section{补充章节}
+\section{核心算法伪代码}
+\label{sec:appendix-algo}
 
-\subsection{补充图}
+% TODO: 补充第三章（多路注意力聚合 + 语义难负例对比学习）的完整训练流程伪代码。
+%       可用 algorithm2e 环境，参照原模板第四章示例：
+%       \begin{algorithm}[h] ... \caption{...} \label{algo:xxx} \end{algorithm}
 
-这是附录内容，应该用宋体小四号字体。若想将.csv格式的表格直接导入正文中：
+\section{超参数设置}
+\label{sec:appendix-hyper}
 
-\begin{table}
-	\centering
-	\caption{从csv文件中导入表格}
-	\begin{adjustbox}{max width=\linewidth}
-	\csvautobooktabular{tables/asterids.csv}
-	\end{adjustbox}
-	\label{tab:asterid}
-\end{table}
-
-
-
-
+% TODO: 补充实验所用的完整超参数表（学习率、批大小、嵌入维度、dropout、
+%       分散正则化权重、视图融合权重等），与正文实验章节对应。
