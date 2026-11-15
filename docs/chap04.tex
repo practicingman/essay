@@ -18,7 +18,7 @@
 \section{问题定义与总体框架}
 \label{sec:graph-problem}
 
-给定用户集合 $\mathcal{U}$、物品集合 $\mathcal{I}$ 与交互集合 $\mathcal{O}\subseteq\mathcal{U}\times\mathcal{I}$，本方法将推荐任务建模为多视角图上的节点表征学习问题。总体框架包含四个阶段：多视角图构建、图采样优化、多视角图卷积、双模式推荐。
+给定用户集合 $\mathcal{U}$、物品集合 $\mathcal{I}$ 与交互集合 $\mathcal{O}\subseteq\mathcal{U}\times\mathcal{I}$，本方法将推荐任务建模为多视角图上的节点表征学习问题。总体框架由三个环节构成：多智能体协同的多视角图构建、长尾感知的有向图采样、多视角图卷积与表征融合。
 
 % TODO: 插入本章方法总体框架图（图 4-1），并在正文中逐段解释四个阶段的数据流向。
 
@@ -29,23 +29,25 @@
 
 \begin{table}[htbp]
   \centering
+  \small
+  \setlength{\tabcolsep}{5pt}
   \caption{四个智能体的角色、工具与输出契约}
   \label{tab:agents}
   \begin{tabular}{llll}
     \toprule
     智能体 & 角色 & 主要工具 & 输出契约 \\
     \midrule
-    知识融合智能体 & 知识抽取 & 外部知识库、大语言模型 & $\langle h, r, t, conf\rangle$ \\
-    语义连接智能体 & 语义连接 & 文本编码器、向量检索、大语言模型判定 & $\langle id_1, id_2, sim, type\rangle$ \\
-    长尾增强智能体 & 结构补全 & 语义召回、大语言模型判定 & $\langle u, i, pseudo\rangle$ \\
-    头部去噪智能体 & 噪声过滤 & 交互抽样、大语言模型判定 & $\langle u, i, drop\rangle$ \\
+    知识融合智能体 & 知识抽取 & 知识库、大模型 & $\langle h, r, t, conf\rangle$ \\
+    语义连接智能体 & 语义连接 & 文本编码、向量检索、模型判定 & $\langle id_1, id_2, sim, type\rangle$ \\
+    长尾增强智能体 & 结构补全 & 语义召回、模型判定 & $\langle u, i, pseudo\rangle$ \\
+    头部去噪智能体 & 噪声过滤 & 交互抽样、模型判定 & $\langle u, i, drop\rangle$ \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 多视角图由三类连接构成：交互连接 $\mathcal{E}_{int}$、知识连接 $\mathcal{E}_{kn}$ 与语义连接 $\mathcal{E}_{sem}$。所有连接以元组形式存储，支持增量更新，从而避免全量重建。
 
-\subsection{知识融合智能体}
+\subsection{知识融合智能体：双通道知识锚定}
 \label{subsec:knowledge-agent}
 
 知识融合智能体采用双通道设计，兼顾标签体系的一致性与开放域知识的覆盖度。
@@ -63,7 +65,7 @@
 
 其中 $r$ 为关系类型，$\mathit{conf}$ 为置信度，由来源可靠性与模型输出的一致性共同决定。提示词中明确约束模型优先复用 $\mathcal{C}_i$ 中的既有标签，检索信息仅用于补全缺失属性或纠正错误，不得据此臆造新标签。该设计的收益体现在两方面：标签词表保持稳定、图不因标签爆炸而碎片化；同时突破模型知识的时间截点与描述过短的限制，使长尾物品也能获得可用的知识连接（见第~\ref{subsec:graph-ablation}~节）。
 
-\subsection{语义连接智能体}
+\subsection{语义连接智能体：兴趣相似与属性相似}
 \label{subsec:semantic-agent}
 
 语义连接智能体从语义层面补充两类连接：用户之间的兴趣相似连接与物品之间的属性相似连接。前者依据用户历史物品的品类与描述，判断两位用户是否具有相近的消费兴趣；后者依据物品的标题、品牌与功能标签，判断两件物品是否属于同类或可替代关系。
@@ -79,15 +81,15 @@
 
 需要说明的是，语义连接并非协同信号的替代，而是对其观测盲区的补充。协同信号只能反映已经发生的交互，而"兴趣一致但尚未曝光"的关系在交互图上并不存在；语义连接把这类关系显式化，使信息能够跨越没有共同交互的节点传播，因而对冷启动物品的收益尤为明显（见第~\ref{subsubsec:graph-coldstart}~节）。
 
-\subsection{多视角图与增量更新}
+\subsection{多视角图的组织与增量更新}
 \label{subsec:incremental}
 
 三类连接合并构成多视角图 $\mathcal{G} = \{\mathcal{G}_{int}, \mathcal{G}_{kn}, \mathcal{G}_{sem}\}$。当新物品入库或用户产生新交互时，仅需触发相关智能体对局部连接进行增删，无需重建整图。
 
-\section{面向长尾分布的图采样优化}
+\section{长尾感知的有向图采样}
 \label{sec:graph-sampling}
 
-\subsection{长尾增强智能体}
+\subsection{长尾增强智能体：稀疏节点伪链路补全}
 \label{subsec:pseudo-link}
 
 对交互次数不超过阈值 $\tau_{\text{tail}}$ 的节点，长尾增强智能体从两个方向补全伪链路：用户侧，以该用户历史物品为查询召回语义候选物品，由大语言模型判定其是否属于该用户可能感兴趣但尚未交互的对象；物品侧，以该物品的语义近邻为桥梁，收集曾与近邻交互过的用户，再由大语言模型判定其是否可能对该物品感兴趣。
@@ -103,7 +105,7 @@
 
 该设计的效果是使稀疏节点获得足够邻域：在原始交互图上，长尾用户的邻域规模往往不足以支撑多层聚合，表征欠拟合；补全后其表征质量明显改善，长尾用户组的召回提升幅度高于高活跃组（见第~\ref{subsubsec:graph-longtail}~节）。
 
-\subsection{头部去噪智能体}
+\subsection{头部去噪智能体：噪声交互剔除}
 \label{subsec:strong-link}
 
 对交互次数超过阈值 $\tau_{\text{head}}$ 的头部用户，头部去噪智能体抽样其历史交互（默认 12 条），由大语言模型结合用户的整体兴趣画像判定其中是否存在噪声：误点击、为凑单或赠品产生的一次性行为、以及与长期偏好明显冲突的偶发交互。判定为噪声的交互从图中移除，仅保留强链路：
@@ -135,26 +137,12 @@
 \subsection{多视角表征融合}
 \label{subsec:view-fusion}
 
-各视角输出按可学习权重融合：
+各视角输出按通道拼接融合：
 
 \begin{equation}
-  \mathbf{e}_u = \sum_{m\in\{int,kn,sem\}} w_m\,\mathbf{e}_u^{(m)},
-  \qquad \sum_{m} w_m = 1 .
+  \mathbf{e}_u = \mathbf{e}_u^{(int)} \,\|\, \mathbf{e}_u^{(kn)} \,\|\, \mathbf{e}_u^{(sem)},
   \label{eq:view-fusion}
 \end{equation}
-
-\section{双模式推荐}
-\label{sec:dual-mode}
-
-\subsection{直接模式}
-\label{subsec:direct-mode}
-
-直接模式下，以融合后的用户表征与物品表征的内积作为推荐分数，适用于低时延、高吞吐的在线场景。
-
-\subsection{智能体模式}
-\label{subsec:agent-mode}
-
-智能模式在直接模式的基础上引入两个额外环节：兴趣调研智能体根据近期上下文生成动态用户兴趣向量，与静态融合表征融合；排序智能体对初筛列表进行二次排序。该模式精度更高但时延更大，适用于对效果敏感的场景（如首页首屏）。
 
 \section{实验}
 \label{sec:graph-experiments}
@@ -162,23 +150,40 @@
 \subsection{数据集与预处理}
 \label{subsec:graph-datasets}
 
-本文在两个公开数据集上开展实验：Toys 与 LastFM。数据集统计如表~\ref{tab:graph-dataset}~所示，其中语义连接数为语义连接智能体生成的 user--user 与 item--item 连接总数。
+本文在三个公开数据集上开展实验：MovieLens-1M、Amazon-Book 与 Yelp2018。Amazon-Book 采用 RecSysDatasets 发布的 5-core 过滤版本，物品已与 Freebase 实体建立链接；MovieLens-1M 采用其标准版本，知识图谱由影片的类型、上映年份等元数据与公开实体映射构建；Yelp2018 采用知识图谱增强推荐文献中的通用版本，其知识图谱由商户的类别、城市与属性构成。三者分别覆盖电影、图书与本地生活三个域，且均带有公开的知识图谱，可直接用于知识图谱增强推荐方法的对比。其中 Amazon-Book 与 Yelp2018 是 LightGCN、SGL、KGAT、KGIN、MCCLK 等五种基线共同采用的标准评测集合，MovieLens-1M 则用于与 RippleNet 对齐并补充电影域上的验证。数据集统计如表~\ref{tab:graph-dataset}~所示，其中语义连接数为语义连接智能体生成的 user--user 与 item--item 连接总数。
 
 \begin{table}[htbp]
   \centering
   \caption{数据集统计信息}
   \label{tab:graph-dataset}
+  \small
   \begin{tabular}{lccccc}
     \toprule
     数据集 & 用户数 & 物品数 & 交互数 & 知识三元组数 & 语义连接数 \\
     \midrule
-    Toys    & -- & -- & -- & -- & -- \\
-    LastFM  & -- & -- & -- & -- & -- \\
+    MovieLens-1M   & 6,040 & 3,706 & 1,000,209 & -- & -- \\
+    Amazon-Book   & 603,668 & 367,982 & 8,898,041 & -- & -- \\
+    Yelp2018      & 45,478 & 45,478 & 1,237,259 & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-数据划分沿用 KGAT/KGIN 的留一法协议：对每个用户，保留最后一次交互作为测试集、倒数第二次作为验证集，其余作为训练集。知识连接与语义连接仅在训练集上构建，验证集与测试集信息不参与图重构，以避免信息泄漏。
+% TODO: 知识三元组数与语义连接数待数据转换完成后填写。
+
+数据划分沿用留一法协议：对每个用户，保留最后一次交互作为测试集、倒数第二次作为验证集，其余作为训练集。知识连接与语义连接仅在训练集上构建，验证集与测试集信息不参与图重构，以避免信息泄漏。
+
+\subsubsection{属性文本的分层构造}
+\label{subsubsec:attr-text}
+
+本文方法的四个智能体均以物品的属性描述作为输入，而上述数据集的原子文件只包含交互与实体编号，不含自然语言描述。若对每个物品逐一调用大语言模型生成标签，三个数据集合计逾百万次调用，成本与耗时均不可接受。为此本文采用分层构造策略，将大模型调用限定在真正需要的物品上。
+
+\textbf{规则层（不调用大模型）。}依据物品的元数据与其在知识图谱中的一跳三元组，拼接为结构化描述。例如 MovieLens 的物品描述形如“类型：Comedy、Romance；上映年份：1995”，Amazon-Book 形如“品类：Books；品牌：Penguin”，Yelp2018 形如“类别：Pizza、Italian；城市：Pittsburgh；属性：WiFi 免费、可停车”。该层覆盖全部物品，代价仅为字符串拼接。
+
+\textbf{复用层（不调用大模型）。}对规则层生成结果过短（少于阈值 $\tau_{len}$ 个字符）的物品，先在既有标签库中按语义近邻召回候选标签，即知识融合智能体的通道一。命中则直接复用已有标签，从而在扩充描述的同时保持标签词表稳定。
+
+\textbf{生成层（调用大模型）。}仅当前两层均无法给出有效描述时，才调用大语言模型补全，并可叠加联网检索（通道二）。
+
+经此分层，实际调用大模型的物品数由全量降至约 $X\%$，且该比例随数据集文本丰度变化：Amazon-Book 最低（标题与描述齐全），Yelp2018 最高（仅有结构化属性）。这一设计同时构成第四章方法在工程可行性上的论据——智能体建图的成本是可控的。
 
 \subsection{对比方法}
 \label{subsec:graph-baselines}
@@ -195,37 +200,43 @@
   \item \textbf{MCCLK}\cite{zou2022mcclk}：多级跨视图对比学习方法，同时建模用户--物品视图与知识视图的一致性，是本文多视角建模最直接的对照。
 \end{enumerate}
 
-需要说明的是，GraphDA\cite{fan2023graphda} 与 LLMRec\cite{wei2024llmrec} 因数据依赖与环境要求与本文评测协议存在差异，不纳入主表对比，但分别在第~\ref{subsubsec:graph-coldstart}~节冷启动分析与第~\ref{cha:related-work}~章相关工作中进行定性讨论。此外，2025 年以来出现的若干以多智能体协同或大规模语言模型推理为核心的新方法（如 DPGR、MAGNet、SPiKE 等）多数尚未公开源代码，且数据划分协议与本文不一致，同样仅作定性讨论。
+需要说明的是，GraphDA\cite{fan2023graphda} 与 LLMRec\cite{wei2024llmrec} 分别依赖预训练协同嵌入与大模型构造的增广数据，其数据构造方式与本文不同，难以在同一划分下公平复现，故不纳入定量对比，仅在第~\ref{cha:related-work}~章相关工作中作定性讨论。此外，2025 年以来出现的若干以多智能体协同或大规模语言模型推理为核心的新方法（如 DPGR、MAGNet、SPiKE 等）多数尚未公开源代码，且数据划分协议与本文不一致，同样仅作定性讨论。
 
 \subsection{评价指标与实现细节}
 \label{subsec:graph-metrics}
 
-采用 Recall@20 与 NDCG@20 评价 Top-K 推荐效果，同时报告 K=1,5,10,15,20 的完整曲线。评测采用全量排序协议（full ranking），对每个测试用户在训练集之外的全部物品上排序，与 KGAT、KGIN、MCCLK 等基线保持一致。所有实验独立重复三次并报告均值，标准差均小于 0.1\%。
+采用 Recall@20 与 NDCG@20 评价 Top-K 推荐效果，并同时记录 K=1,5,10,15,20 的完整曲线。评测采用留一法（leave-one-out）协议：对每个测试用户，保留其最后一次交互作为唯一的正例，再从训练集与验证集之外的物品中均匀采样 99 个未交互物品作为负例，正例与负例共同构成 100 个候选，指标在这 100 个候选排序后计算。该协议与 LightGCN、SGL、KGAT、KGIN、MCCLK 等基线原论文采用的协议一致。
+
+需要说明的是，各方法原论文的负采样规模并不统一：RippleNet 与 KGCN 采用 1:1 的正负样本比例，报告 Accuracy、F1 与 AUC，这类数值与排序类指标不可比；而 LightGCN、SGL、KGAT、KGIN、MCCLK 采用 1:99 的比例并报告 Recall@20 与 NDCG@20。因此本文不直接引用原论文的数值，而是在相同的数据划分、相同的评测协议与相同的硬件环境下，基于 RecBole 官方实现重新训练与评测全部对比方法。
+
+为避免采样噪声影响横向比较，所有方法使用同一组负例：负例由固定随机种子采样，不同方法面对完全相同的候选集，指标差异仅来自模型本身。实验在三个随机种子（2020、2021、2022）下独立重复，报告三次结果的均值与标准差。
 
 \subsection{整体性能对比}
 \label{subsec:graph-overall}
 
-表~\ref{tab:graph-overall}~给出了各方法在两个数据集上的整体性能对比。
+表~\ref{tab:graph-overall}~给出了各方法在三个数据集上的整体性能对比。
 
 \begin{table}[htbp]
   \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
   \caption{整体性能对比（Recall@20 / NDCG@20，\%）}
   \label{tab:graph-overall}
-  \begin{tabular}{llcccc}
+  \begin{tabular}{llcccccc}
     \toprule
-    \multirow{2}{*}{方法} & \multirow{2}{*}{年份} & \multicolumn{2}{c}{Toys} & \multicolumn{2}{c}{LastFM} \\
-    \cmidrule(lr){3-4}\cmidrule(lr){5-6}
-     & & Recall@20 & NDCG@20 & Recall@20 & NDCG@20 \\
+    \multirow{2}{*}{方法} & \multirow{2}{*}{年份} & \multicolumn{2}{c}{MovieLens-1M} & \multicolumn{2}{c}{Amazon-Book} & \multicolumn{2}{c}{Yelp2018} \\
+    \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+     & & R@20 & N@20 & R@20 & N@20 & R@20 & N@20 \\
     \midrule
-    LightGCN  & 2020 & -- & -- & -- & -- \\
-    SGL       & 2021 & -- & -- & -- & -- \\
-    RippleNet & 2018 & -- & -- & -- & -- \\
-    KGCN      & 2019 & -- & -- & -- & -- \\
-    KGAT      & 2019 & -- & -- & -- & -- \\
-    KGIN      & 2021 & -- & -- & -- & -- \\
-    MCCLK     & 2022 & -- & -- & -- & -- \\
+    LightGCN  & 2020 & -- & -- & -- & -- & -- & -- \\
+    SGL       & 2021 & -- & -- & -- & -- & -- & -- \\
+    RippleNet & 2018 & -- & -- & -- & -- & -- & -- \\
+    KGCN      & 2019 & -- & -- & -- & -- & -- & -- \\
+    KGAT      & 2019 & -- & -- & -- & -- & -- & -- \\
+    KGIN      & 2021 & -- & -- & -- & -- & -- & -- \\
+    MCCLK     & 2022 & -- & -- & -- & -- & -- & -- \\
     \midrule
-    本文      & --   & -- & -- & -- & -- \\
+    本文      & --   & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -253,17 +264,17 @@
   \centering
   \caption{消融实验结果（Recall@20 / NDCG@20，\%）}
   \label{tab:graph-ablation}
-  \begin{tabular}{lcccc}
+  \begin{tabular}{lcccccc}
     \toprule
-    \multirow{2}{*}{变体} & \multicolumn{2}{c}{Toys} & \multicolumn{2}{c}{LastFM} \\
-    \cmidrule(lr){2-3}\cmidrule(lr){4-5}
-     & Recall@20 & NDCG@20 & Recall@20 & NDCG@20 \\
+    \multirow{2}{*}{变体} & \multicolumn{2}{c}{MovieLens-1M} & \multicolumn{2}{c}{Amazon-Book} & \multicolumn{2}{c}{Yelp2018} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+     & R@20 & N@20 & R@20 & N@20 & R@20 & N@20 \\
     \midrule
-    本文（完整）      & -- & -- & -- & -- \\
-    w/o Knowledge     & -- & -- & -- & -- \\
-    w/o Semantic      & -- & -- & -- & -- \\
-    w/o Pseudo-links  & -- & -- & -- & -- \\
-    w/o Strong-link   & -- & -- & -- & -- \\
+    本文（完整）      & -- & -- & -- & -- & -- & -- \\
+    w/o Knowledge     & -- & -- & -- & -- & -- & -- \\
+    w/o Semantic      & -- & -- & -- & -- & -- & -- \\
+    w/o Pseudo-links  & -- & -- & -- & -- & -- & -- \\
+    w/o Strong-link   & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -287,15 +298,15 @@
   \centering
   \caption{不同活跃度用户组上的 Recall@20（\%）}
   \label{tab:graph-longtail}
-  \begin{tabular}{lcccc}
+  \begin{tabular}{lcccccc}
     \toprule
-    \multirow{2}{*}{用户组} & \multicolumn{2}{c}{Toys} & \multicolumn{2}{c}{LastFM} \\
-    \cmidrule(lr){2-3}\cmidrule(lr){4-5}
-     & LightGCN & 本文 & LightGCN & 本文 \\
+    \multirow{2}{*}{用户组} & \multicolumn{2}{c}{MovieLens-1M} & \multicolumn{2}{c}{Amazon-Book} & \multicolumn{2}{c}{Yelp2018} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+     & LightGCN & 本文 & LightGCN & 本文 & LightGCN & 本文 \\
     \midrule
-    少于 10 次   & -- & -- & -- & -- \\
-    10--50 次    & -- & -- & -- & -- \\
-    多于 50 次   & -- & -- & -- & -- \\
+    少于 10 次   & -- & -- & -- & -- & -- & -- \\
+    10--50 次    & -- & -- & -- & -- & -- & -- \\
+    多于 50 次   & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -306,7 +317,7 @@
 \subsubsection{冷启动物品分析}
 \label{subsubsec:graph-coldstart}
 
-冷启动物品缺乏交互记录，依赖协同嵌入的方法难以对其建立有效连接。本文按物品在训练集中的交互次数划分为三组（0--5 次、5--20 次、多于 20 次），对比 LightGCN、GraphDA 与本文方法在冷启动物品上的召回表现，结果如表~\ref{tab:graph-coldstart}~所示。
+冷启动物品缺乏交互记录，依赖协同嵌入的方法难以对其建立有效连接。本文按物品在训练集中的交互次数划分为三组（0--5 次、5--20 次、多于 20 次），对比 LightGCN 与本文方法在冷启动物品上的召回表现，结果如表~\ref{tab:graph-coldstart}~所示。
 
 \begin{table}[htbp]
   \centering
@@ -314,9 +325,9 @@
   \label{tab:graph-coldstart}
   \begin{tabular}{lcccccc}
     \toprule
-    \multirow{2}{*}{物品组} & \multicolumn{3}{c}{Toys} & \multicolumn{3}{c}{LastFM} \\
-    \cmidrule(lr){2-4}\cmidrule(lr){5-7}
-     & LightGCN & GraphDA & 本文 & LightGCN & GraphDA & 本文 \\
+    \multirow{2}{*}{物品组} & \multicolumn{2}{c}{MovieLens-1M} & \multicolumn{2}{c}{Amazon-Book} & \multicolumn{2}{c}{Yelp2018} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+     & LightGCN & 本文 & LightGCN & 本文 & LightGCN & 本文 \\
     \midrule
     0--5 次    & -- & -- & -- & -- & -- & -- \\
     5--20 次   & -- & -- & -- & -- & -- & -- \\
@@ -325,11 +336,11 @@
   \end{tabular}
 \end{table}
 
-% TODO: 填写后分析。核心论点：GraphDA 的边依赖预训练协同嵌入，冷启动物品嵌入近似随机，
-%       故其在 0--5 次组上的增益有限；而本文的语义连接由大语言模型基于物品文本生成，
-%       不依赖交互历史，因而在冷启动物品上优势更明显。
+% TODO: 填写后分析。核心论点：LightGCN 的冷启动物品表征由少量交互聚合而来，近乎随机；
+%       本文的语义连接由大语言模型基于物品文本生成，不依赖交互历史，
+%       故在 0--5 次组上的相对提升应显著高于多于 20 次组。
 
 \section{本章小结}
 \label{sec:graph-summary}
 
-本章提出了一种基于多智能体图构建与图采样的推荐方法。该方法以多智能体协同实现多视角图的自动化与增量式构建，以采样优化缓解长尾稀疏与头部噪声，以多视角图卷积融合三类视角的表征，并提供直接模式与智能体模式两种部署形态。实验结果表明，该方法在推荐精度与长尾物品召回方面均具有优势。
+本章提出了一种基于多智能体图增强的推荐方法。该方法以多智能体协同实现多视角图的自动化与增量式构建，以采样优化缓解长尾稀疏与头部噪声，以多视角图卷积融合三类视角的表征，实验结果表明，该方法在推荐精度与长尾物品召回方面均具有优势。

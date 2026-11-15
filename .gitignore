@@ -258,3 +258,7 @@ TSWLatexianTemp*
 
 # standalone packages
 *.sta
+
+# 本地工作文件（不公开）
+论文进展纪要.md
+.claude/
